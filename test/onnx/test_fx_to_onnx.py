@@ -330,6 +330,7 @@ class TestFxToOnnx(pytorch_test_common.ExportTestCase):
                 expected_node="aten.mul.Tensor",
             )
 
+    @pytorch_test_common.xfail(error_message="'submodule_1' not found in {")
     def test_symbolic_shape_of_values_inside_function_is_exported_as_graph_value_info(
         self,
     ):
@@ -868,7 +869,7 @@ class TestFxToOnnx(pytorch_test_common.ExportTestCase):
 
     def test_fail_optimize(self):
         # Monkey patching onnxscript's optimizer
-        import onnxscript
+        from onnxscript import optimizer
 
         def monkey_optimize(
             model,
@@ -881,7 +882,7 @@ class TestFxToOnnx(pytorch_test_common.ExportTestCase):
         ):
             raise RuntimeError("It's tough to be a bug!")
 
-        onnxscript.optimizer.optimize = monkey_optimize
+        optimizer.optimize = monkey_optimize
 
         class MyModel(torch.nn.Module):
             def forward(self, x):

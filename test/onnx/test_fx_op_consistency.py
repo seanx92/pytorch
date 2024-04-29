@@ -25,10 +25,10 @@ Note:
 
     1. Please make sure pytest-subtests is installed. Otherwise, the sub-tests will be ignored.
 
-    2. Install pytest-xdist to run tests in parallel if runng all tests is the goal.
+    2. Install pytest-xdist to run tests in parallel if running all tests is the goal.
 
     3. When new ops are supported, please scroll down to modify the EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES and
-    TESTED_OPS lists. See "Modify this section"
+    SKIP_XFAIL_SUBTESTS_WITH_MATCHER_AND_MODEL_TYPE lists. See "Modify this section"
 
 """
 
@@ -425,6 +425,11 @@ EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: Tuple[onnx_test_common.DecorateMeta, ...] =
         reason=onnx_test_common.reason_onnx_script_does_not_support("linalg_cross"),
     ),
     xfail(
+        "diagonal_copy",
+        dtypes=onnx_test_common.BOOL_TYPES,
+        reason=onnx_test_common.reason_onnx_does_not_support("diagonal_copy", "bool"),
+    ),
+    xfail(
         "dot", dtypes=(torch.uint8, torch.int8, torch.int16,),
         reason=onnx_test_common.reason_onnx_does_not_support("MatMul", "uint8, int8, int16")
     ),
@@ -546,6 +551,11 @@ EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: Tuple[onnx_test_common.DecorateMeta, ...] =
         "index_put",
         dtypes=(torch.uint8, torch.int8, torch.int16,),
         reason=onnx_test_common.reason_onnx_script_does_not_support("Add", "int8, int16"),
+    ),
+    xfail(
+        "index_put",
+        dtypes=(torch.int32, torch.int64,),
+        reason=onnx_test_common.reason_onnx_runtime_does_not_support("ScatterND", "int32, int64"),
     ),
     xfail(
         "isnan",
@@ -1274,6 +1284,16 @@ EXPECTED_SKIPS_OR_FAILS_WITH_DTYPES: Tuple[onnx_test_common.DecorateMeta, ...] =
         "histogramdd",
         reason="fixme: Test sets are too many.",
     ),
+    xfail(
+        "index_add",
+        dtypes=(torch.int64, torch.float16, torch.bool, torch.int32),
+        reason=onnx_test_common.reason_onnx_runtime_does_not_support("ScatterND", "float16, int64, bool, torch.int32"),
+    ),
+    xfail(
+        "index_copy",
+        dtypes=(torch.int32,),
+        reason=onnx_test_common.reason_onnx_runtime_does_not_support("index_copy", "int32"),
+    ),
     skip_slow(
         "linalg.lu_solve",
         reason="fixme: Test sets are too many.",
@@ -1415,8 +1435,10 @@ SKIP_XFAIL_SUBTESTS_WITH_MATCHER_AND_MODEL_TYPE: tuple[
     ),
     xfail(
         "index_add",
-        matcher=lambda sample: len(sample.input.shape) < 2,
-        reason="fixme: https://github.com/microsoft/onnxscript/issues/1212",
+        matcher=lambda sample: len(sample.input.shape) == 0,
+        reason=onnx_test_common.reason_onnx_runtime_does_not_support(
+            "ScatterND", "0-D tensor"
+        ),
     ),
     xfail(
         "index_add",
@@ -1425,7 +1447,7 @@ SKIP_XFAIL_SUBTESTS_WITH_MATCHER_AND_MODEL_TYPE: tuple[
     ),
     xfail(
         "index_copy",
-        matcher=lambda sample: len(sample.input.shape) < 2,
+        matcher=lambda sample: len(sample.input.shape) == 0,
         reason="fixme: https://github.com/microsoft/onnxscript/issues/1212",
     ),
     xfail(
