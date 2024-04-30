@@ -6,6 +6,7 @@ from ...ir import (
     Buffer,
     ChoiceCaller,
     CUDATemplateBuffer,
+    FlexibleLayout,
     IRNode,
     Layout,
     PrimitiveInfoType,
@@ -168,8 +169,9 @@ class CUDATemplateKernel(CUDAKernel):
         # workspace_size should have already been retrieved prior to this call.
         call_args.append("None")
 
-        if node.get_workspace_size() > 0:
-            call_args.append(f"c_void_p({node.get_name()}_workspace.data_ptr())")
+        workspace_node = V.graph.get_workspace_buffer_for(node)
+        if workspace_node is not None:
+            call_args.append(f"c_void_p({workspace_node.get_name()}.data_ptr())")
         else:
             call_args.append("None")
 
@@ -252,7 +254,7 @@ class CUDATemplateKernel(CUDAKernel):
             end_index = start_index
         end_index = _normalize_idx(end_index, len(node.get_size()))
 
-        sizes = node.get_size()[start_index : end_index + 1]
+        sizes = node.get_size()[start_index : end_index + 1]  # type: ignore[union-attr]
         if len(sizes) == 0:
             return str(default_value)
 
@@ -321,7 +323,7 @@ class CUDATemplateCaller(ChoiceCaller):
         category: str,
         input_nodes: List[Buffer],
         layout: Layout,
-        make_kernel_render: Callable[[CUDATemplateBuffer, Optional[List[IRNode]]], str],
+        make_kernel_render: Callable[[CUDATemplateBuffer], str],
         bmreq: CUDABenchmarkRequest,
         template: "CUDATemplate",  # type: ignore[name-defined]
         info_kwargs: Optional[Dict[str, Union[PrimitiveInfoType, List[PrimitiveInfoType]]]],  # type: ignore[type-arg]
@@ -339,9 +341,8 @@ class CUDATemplateCaller(ChoiceCaller):
 
     def benchmark(self, *args, out) -> float:
         assert self.bmreq is not None
-        return self.bmreq.benchmark(
-            *args, output_tensor=out
-        )  # @TODO: Hack for ensuring that Cutlass Kernel is preferred
+        res = self.bmreq.benchmark(*args, output_tensor=out)
+        return res
 
     def __str__(self):
         return f"CUDATemplateCaller(source_file={self.bmreq.source_file})"
@@ -379,6 +380,18 @@ class CUDATemplateCaller(ChoiceCaller):
             return {"backend": "CUDA", "op_type": "unknown"}
 
     def output_node(self) -> TensorBox:
+        for i, node in enumerate(self.input_nodes):
+            if (
+                hasattr(node, "freeze_layout_with_same_order")
+                and hasattr(node, "layout")
+                and isinstance(node.layout, FlexibleLayout)
+            ):
+                node.freeze_layout_with_same_order(
+                    self.bmreq.input_tensor_meta[i].strides
+                )
+
+        # ensure workspace size is correct, even if timing is retrieved from cache
+        self.bmreq.update_workspace_size()
         return TensorBox.create(
             CUDATemplateBuffer(
                 layout=self.layout,

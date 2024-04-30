@@ -12,7 +12,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from io import StringIO
 
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Union
 from unittest.mock import patch
 
 import sympy
@@ -513,7 +513,7 @@ class TritonTemplate(KernelTemplate):
         self.all_templates[name] = self
         self.debug = debug
 
-    def generate(
+    def generate(  # type: ignore[override]
         self,
         input_nodes,
         layout,
@@ -525,8 +525,8 @@ class TritonTemplate(KernelTemplate):
         subgraphs=None,
         mutated_inputs=None,
         **kwargs,
-    ):
-        """This function generates a TritonTemplateCaller
+    )  -> Generator[ChoiceCaller, None, None]:
+        """This function generates TritonTemplateCallers
 
         Args:
             input_nodes: List of input nodes
@@ -584,7 +584,7 @@ class TritonTemplate(KernelTemplate):
                 code = kernel.render(self.template, kwargs).finalize()
             except ZeroDivisionError:
                 # TODO(nmacchioni): fix sympy division by zero
-                return None
+                return None  # noqa: B901
             if self.debug:
                 print("Generated Code:\n", code)
             extra = (
@@ -661,7 +661,7 @@ class TritonTemplate(KernelTemplate):
             output_tensor_meta=TensorMeta.from_irnodes(layout),
         )
 
-        return TritonTemplateCaller(
+        yield TritonTemplateCaller(
             kernel_hash_name,
             full_input_nodes,
             layout,
@@ -927,6 +927,7 @@ class AlgorithmSelectorCache(PersistentCache):
         # arg, the function will be called instead of
         # generating a random torch.Tensor for benchmarking.
         input_gen_fns: Optional[Dict[int, Callable[[ir.Buffer], torch.Tensor]]] = None,
+        return_selection_result_details=False,
         precompilation_timeout_seconds: int = 60 * 60,
         return_multi_template=False,
     ):
@@ -951,6 +952,8 @@ class AlgorithmSelectorCache(PersistentCache):
 
         if len(choices) == 1:
             if not isinstance(choices[0], CUDATemplateCaller):
+                if return_selection_result_details:
+                    return choices[0], {choices[0]: -1.0}
                 # CUDATemplateCaller still needs to go through autotuning process to retrieve workspace size.
                 return choices[0].output_node()
 
@@ -1167,14 +1170,17 @@ class AlgorithmSelectorCache(PersistentCache):
                 for input_node in input_nodes
             ]
 
-            out = cls.benchmark_example_value(layout)
-            out_extern = torch.as_strided(
-                out, out.size(), out.stride(), V.graph.sizevars.size_hint(layout.offset)
-            )
-            expected = None
-            if VERIFY:
-                choices[0].benchmark(*example_inputs_extern, out=out_extern)
-                expected = out_extern.clone()
+        out = cls.benchmark_example_value(layout)
+        out_extern = torch.as_strided(
+            out, out.size(), out.stride(), V.graph.sizevars.size_hint(layout.offset)
+        )
+        expected = None
+        if VERIFY:
+            for i in range(len(choices)):
+                if isinstance(choices[i], ExternKernelCaller):
+                    choices[i].benchmark(*example_inputs_extern, out=out_extern)
+                    expected = out_extern.clone()
+                    break
 
             return example_inputs, example_inputs_extern, out, out_extern, expected
 
