@@ -2,6 +2,9 @@
 
 import functools
 
+import threading
+import types
+
 import torch
 import torch.utils._pytree as pytree
 
@@ -26,16 +29,59 @@ def is_compiling() -> bool:
     return torch.compiler.is_compiling()
 
 
+_TLS = threading.local()
+
+_TLS.cached_wrappers = {}
+
+
+@functools.lru_cache(None)
+def create_new_fn(fn):
+    from .bytecode_transformation import transform_code_object
+
+    def nothing(*args):
+        pass
+
+    new_code = transform_code_object(fn.__code__, nothing)
+    new_fn = types.FunctionType(
+        new_code,
+        fn.__globals__,
+        fn.__name__,
+        fn.__defaults__,
+        fn.__closure__,
+    )
+    new_fn.__kwdefaults__ = fn.__kwdefaults__
+    return new_fn
+
+
 def wrap_inline(fn):
     """
     Create an extra frame around fn that is not in skipfiles
     """
 
-    @functools.wraps(fn)
+    # If the code object has already been wrapped before, return the cached
+    # wrapper.
+    cached_wrappers = _TLS.cached_wrappers
+
+    if isinstance(fn, torch.nn.Module):
+        key = fn.forward.__code__
+    else:
+        key = fn.__code__
+
+    if cached_wrapper := cached_wrappers.get(key):
+        return cached_wrapper
+
     def inner(*args, **kwargs):
         return fn(*args, **kwargs)
 
-    return inner
+    # Create a new function dynamically to avoid Dynamo cache collisions on the
+    # same fn.__code__ object.
+    # functools.wraps is really important to ensure that __dict__ of the old
+    # function is propagated to the new function.
+    new_fn = functools.wraps(fn)(create_new_fn(inner))
+
+    cached_wrappers[key] = new_fn
+
+    return new_fn
 
 
 def call_hook(hook, *args):
