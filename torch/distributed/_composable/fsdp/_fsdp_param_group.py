@@ -339,6 +339,7 @@ class FSDPParamGroup:
             self.reshard()
         if len(fsdp_params_with_grad) == 0:
             return
+        # logging.info("DLDEBUG FSDPParamGroup post_backward_reshard foreach_reduce: _should_all_reduce_grads=%s", self._should_all_reduce_grads())
         with torch.profiler.record_function("FSDP::post_backward_reduce"):
             self._post_reduce_view_out_event = foreach_reduce(
                 fsdp_params_with_grad,
