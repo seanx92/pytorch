@@ -522,7 +522,8 @@ class TestPasses(TestCase):
 
             def forward(self, x):
                 b = x.item()
-                torch._constrain_as_value(b, min=2, max=5)
+                torch._check(b >= 2)
+                torch._check(b <= 5)
                 return b
 
         x = torch.tensor([2])
@@ -545,7 +546,8 @@ class TestPasses(TestCase):
 
             def forward(self, x):
                 b = x.nonzero()
-                torch._constrain_as_value(b.shape[0], min=3, max=5)
+                torch._check(b.shape[0] >= 3)
+                torch._check(b.shape[0] <= 5)
                 return b
 
         x = torch.tensor([2, 1, 2, 3, 5, 0])
@@ -586,12 +588,14 @@ class TestPasses(TestCase):
             def forward(self, pred, x, y):
                 def true_fn(x, y):
                     b = x.item()
-                    torch._constrain_as_value(b, min=2, max=5)
+                    torch._check(b >= 2)
+                    torch._check(b <= 5)
                     return x - b
 
                 def false_fn(x, y):
                     c = y.item()
-                    torch._constrain_as_value(c, min=2, max=5)
+                    torch._check(c >= 2)
+                    torch._check(c <= 5)
                     return y - c
 
                 ret = cond(pred, true_fn, false_fn, [x, y])
@@ -611,7 +615,8 @@ class TestPasses(TestCase):
         class Foo(torch.nn.Module):
             def forward(self, x):
                 a = x.item()
-                torch._constrain_as_value(a, 4, 7)
+                torch._check(a >= 4)
+                torch._check(a <= 7)
                 return torch.empty((a, 4))
 
         f = Foo()
